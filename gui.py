@@ -29,16 +29,15 @@ class gui(tk.Frame):
 		self.installpath = os.getcwd()
 		self.settingsconn = sqlite3.connect(os.path.join(self.installpath, "settings.sql"))
 		settingcursor = self.settingsconn.cursor()
-		
 		settingcursor.execute('SELECT value from defaultsettings where setting = "defaultGameLocation"')
 		gl = settingcursor.fetchone()
 		if gl:
 			self.defaultGameLocation = gl[0]
 		else:
 			self.defaultGameLocation = tk.filedialog.askdirectory(title="Where would you like the default install directory to be?")
-			settingcursor.execute('INSERT INTO defaultsettings VALUES ("defaultGameLocation", ?);', (self.defaultGameLocation,))
-			self.settingsconn.commit()
-		print("Game location is %s" % (self.defaultGameLocation))
+			with self.launcher.sqllock:
+				settingcursor.execute('INSERT INTO defaultsettings VALUES ("defaultGameLocation", ?);', (self.defaultGameLocation,))
+				self.settingsconn.commit()
 		if platform.system() == "Windows":
 			self.platform = platforms.windows
 		elif platform.system() == "Linux":
@@ -53,7 +52,7 @@ class gui(tk.Frame):
 		self.finishedQueue = queue.Queue()
 		self.downloadThread = DownloaderThread(self.downloadQueue, self.finishedQueue, self.launcher.sqlconn)
 		self.downloadThread.start()
-		self.imageThread = ImageThread(self.launcher.sqlconn)
+		self.imageThread = ImageThread(self.launcher.sqlconn, self.launcher.sqllock)
 		self.imageThread.start()
 
 
@@ -92,8 +91,9 @@ class gui(tk.Frame):
 
 	def clearImageCache(self):
 		c = self.launcher.sqlconn.cursor()
-		c.execute('UPDATE allgames set cachedimage=False, localimage="";')
-		self.launcher.sqlconn.commit()
+		with self.launcher.sqllock:
+			c.execute('UPDATE allgames set cachedimage=False, localimage="";')
+			self.launcher.sqlconn.commit()
 		self.showGames()
 
 	def showAllGames(self):
@@ -246,8 +246,9 @@ class gui(tk.Frame):
 		executable, installdir = c.fetchone()
 		if not executable:
 			executable = tk.filedialog.askopenfilename(initialdir = installdir, title="Choose which executable to run")
-			c.execute('UPDATE downloadedgames set %s=? where name=?' % (execname), (executable,frame.name))
-			self.launcher.sqlconn.commit()
+			with self.launcher.sqllock:
+				c.execute('UPDATE downloadedgames set %s=? where name=?' % (execname), (executable,frame.name))
+				self.launcher.sqlconn.commit()
 			if not executable:
 				return
 
@@ -270,9 +271,7 @@ class gui(tk.Frame):
 		frame.progress.place(relx=0, rely=1, anchor="sw")
 		downloadLocation = os.path.join(self.defaultGameLocation, re.sub("[^0-9a-zA-Z]+","_",frame.name))
 		#name, platform, location, overwrite, cookies, x64, homedir, progressor
-		print("Download locatin: %s" % downloadLocation)
-		print("Cache location: %s" % self.installpath)
-		self.downloadQueue.put((frame.name, self.platform, downloadLocation, True, self.launcher.session.cookies, True, self.installpath, frame.progress))
+		self.downloadQueue.put((frame.name, self.platform, downloadLocation, True, self.launcher.session.cookies, True, self.installpath, frame.progress, self.launcher.sqllock))
 
 		
 	def makeGameWidget(self, game=None, parentframe=None):
@@ -325,34 +324,36 @@ class gui(tk.Frame):
 		elif self.platform == platforms.windows:
 			installname = "windowsinstall"
 			execname = 'windowsexec'
-			
-		c.execute('UPDATE downloadedgames set %s="" where name=?;' % (execname), (frame.name,))
-		self.launcher.sqlconn.commit()
+		with self.launcher.sqllock:
+			c.execute('UPDATE downloadedgames set %s="" where name=?;' % (execname), (frame.name,))
+			self.launcher.sqlconn.commit()
 		
 
 
 class ImageThread(threading.Thread):
-	def __init__(self, sqlconn):
+	def __init__(self, sqlconn, lock):
 		threading.Thread.__init__(self, daemon=True)
 		self.sqlconn = sqlconn
+		self.lock = lock
 	def run(self):
 		self.installdir = os.getcwd()
 		while True:
 			print("checking for images")
 			self.check_for_images()
-			time.sleep(5)
+			time.sleep(30)
 	def check_for_images(self):
 		sqlconn = self.sqlconn
 		c = sqlconn.cursor()
 		c.execute('SELECT imageurl,name from allgames where cachedimage=False;')
 		hits = c.fetchall()
 		if hits:
-			print("got some htis")
+			print("got some uncached images")
 			throttle = 1000
 			count=0
 			for game in hits:
 				if game[0]:
 					resp = requests.get(game[0])
+
 					if game[1] != "":
 						filename = re.sub("[^0-9a-zA-Z]+", "_", game[1])
 						localpath = os.path.join(self.installdir,'cache', 'images', '%s.png' % filename)
@@ -360,8 +361,10 @@ class ImageThread(threading.Thread):
 							for chunk in resp:
 								f.write(chunk)
 					try:
-						c.execute('UPDATE allgames set cachedimage=True,  localimage=? where name=?;', (localpath,game[1],))
-						sqlconn.commit()
+							with self.lock:
+								sqlconn.execute('UPDATE allgames set cachedimage=True,  localimage=? where name=?;', (localpath,game[1],))
+								sqlconn.commit()
+							
 					except sqlite3.OperationalError:
 						print("Didn't work for %s. Skipping for now" % game[1])
 					count +=1

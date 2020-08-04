@@ -26,6 +26,7 @@ class ItchioLauncher:
 		self.session.headers.update({'User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:79.0) Gecko/20100101 Firefox/79.0'})
 		self.homedir = os.getcwd()
 		self.sqlconn = sqlite3.connect(os.path.join(self.homedir,"cache/games.sql"), check_same_thread=False)
+		self.sqllock = threading.Lock()
 
 	def login(self,username,password,save=False):
 		self.session.get('https://itch.io')
@@ -133,22 +134,23 @@ class ItchioLauncher:
 			for chunk in requests.get(imageurl,cookies=cookies):
 				f.write(chunk)
 		c = self.sqlconn.cursor()
-		c.execute('UPDATE allgames set cachedimage=True where name=?;', (name,))
-		self.sqlconn.commit()
+		with self.sqllock:
+			c.execute('UPDATE allgames set cachedimage=True where name=?;', (name,))
+			self.sqlconn.commit()
 
 	def cache_game(self,name,imageurl="",downloadpage="", claimpage = "", linux=False, windows=False, mac=False, gameid=""):
 		c = self.sqlconn.cursor()
 		c.execute('SELECT name FROM allgames where name=?', (name,))
 		if not c.fetchone():
-			self.sqlconn.isolation_level = sqlite3.EXCLUSIVE
-			c.execute('INSERT INTO allgames VALUES (?, ?, False, "", ?, ?, ?, ?, False, False, False, ?, ?);', (name, downloadpage, imageurl, windows, linux, mac,claimpage,gameid,))
-			self.sqlconn.commit()
-			self.sqlconn.isolation_level = sqlite3.DEFERRED
+			with self.sqllock:
+				c.execute('INSERT INTO allgames VALUES (?, ?, False, "", ?, ?, ?, ?, False, False, False, ?, ?);', (name, downloadpage, imageurl, windows, linux, mac,claimpage,gameid,))
+				self.sqlconn.commit()
+
 
 	def nonsafe_download_game(self, name, platform=None, location='', overwrite=False,x64=True):
 		ItchioLauncher.thread_safe_download_game(name, platform=platform, location=location, overwrite=overwrite, cookies=self.session.cookies,x64=x64, sqlconn = self.sqlconn, homedir=self.homedir)
 
-	def thread_safe_download_game(name,platform=None,location='',overwrite=False, cookies=None,x64=True, sqlconn = None, homedir = None, progressor=None):
+	def thread_safe_download_game(name,platform=None,location='',overwrite=False, cookies=None,x64=True, sqlconn = None, homedir = None, progressor=None, lock=None):
 		#proxies = {"https":"127.0.0.1:8080"}
 		#verify=False
 		proxies = {}
@@ -173,8 +175,9 @@ class ItchioLauncher:
 		if claimurl != "":
 			response = requests.post(claimurl, data=data, cookies=cookies, proxies=proxies, verify=verify)
 			gamepageurl = response.url
-			c.execute('UPDATE allgames set url=?,claimurl="" where name=?', (gamepageurl,name,))
-			sqlconn.commit()
+			with lock:
+				c.execute('UPDATE allgames set url=?,claimurl="" where name=?', (gamepageurl,name,))
+				sqlconn.commit()
 		
 		gamepage = requests.get(gamepageurl, cookies=cookies, proxies=proxies, verify=verify).text
 		gamesoup = BeautifulSoup(gamepage, 'html.parser')
@@ -193,9 +196,7 @@ class ItchioLauncher:
 		gameresp = requests.post(basename + "/file/%s?key=%s" % (filenum,key), data=data, cookies=cookies, proxies=proxies, verify=verify)
 		thezip = requests.get(gameresp.json()['url'], cookies=cookies, stream=True, proxies=proxies, verify=verify)
 		total_length = int(thezip.headers['Content-length'])
-		print("Before join: %s, %s, %s, %s" % (homedir, 'cache', 'zips', '/Overland.zip'))
 		ziploc = os.path.join(homedir, 'cache', 'zips', '%s.zip' % (name))
-		print("After join: %s" % ziploc)
 		amount_gotten = 0
 		chunk_size = 500000
 		with open(ziploc,'wb') as f:
@@ -215,18 +216,19 @@ class ItchioLauncher:
 		imagelocation = c.fetchone()[0]
 		downloadlocations = ['','','']
 		downloadlocations[platform.value] = os.path.join(location, platform.name)
-		c.execute('INSERT INTO downloadedgames VALUES (?, ?, ?, ?,"","","","",?);', (name, ) + tuple(downloadlocations) + (gameid,))
-		
-		os.makedirs(os.path.join(location,platform.name), exist_ok=overwrite)
+		with lock:
+			c.execute('INSERT INTO downloadedgames VALUES (?, ?, ?, ?,"","","","",?);', (name, ) + tuple(downloadlocations) + (gameid,))
+			
+			os.makedirs(os.path.join(location,platform.name), exist_ok=overwrite)
 
-		if platform == platforms.windows:
-			c.execute('UPDATE allgames set  windows_downloaded=True where name=?;', (name,))
-		if platform == platforms.linux:
-			c.execute('UPDATE allgames set  linux_downloaded=True where name=?;', (name,))
-		if platform == platforms.mac:
-			c.execute('UPDATE allgames set  mac_downloaded=True where name=?;', (name,))
-		sqlconn.commit()
-		return True
+			if platform == platforms.windows:
+				c.execute('UPDATE allgames set  windows_downloaded=True where name=?;', (name,))
+			if platform == platforms.linux:
+				c.execute('UPDATE allgames set  linux_downloaded=True where name=?;', (name,))
+			if platform == platforms.mac:
+				c.execute('UPDATE allgames set  mac_downloaded=True where name=?;', (name,))
+			sqlconn.commit()
+			return True
 
 	def process_all_bundles(self, maxpages=0):
 		self.load_bundles()
@@ -240,9 +242,9 @@ class DownloaderThread(threading.Thread):
 		self.sqlconn = sqlconn
 	def run(self):
 		while True:
-			name, platform, location, overwrite, cookies, x64, homedir, progressor = self.downloadQueue.get(block=True)
+			name, platform, location, overwrite, cookies, x64, homedir, progressor, lock = self.downloadQueue.get(block=True)
 			print("Install location is %s" % location)
-			ItchioLauncher.thread_safe_download_game(name, platform=platform, location=location, overwrite=overwrite, cookies=cookies, x64 = x64, sqlconn = self.sqlconn, homedir = homedir, progressor = progressor)
+			ItchioLauncher.thread_safe_download_game(name, platform=platform, location=location, overwrite=overwrite, cookies=cookies, x64 = x64, sqlconn = self.sqlconn, homedir = homedir, progressor = progressor, lock=lock)
 		
 #mylauncher = ItchioLauncher()
 #mylauncher.session.proxies={'https':'127.0.0.1:8080'}
