@@ -284,7 +284,7 @@ class gui(tk.Frame):
 		frame.imageLabel.configure(image=frame.imageLabel.image)
 		frame.buttonframe = tk.Frame(frame)
 		frame.downloadplay = ttk.Button(frame.buttonframe, style="OneGame.TButton")
-		frame.options = ttk.Button(frame.buttonframe, style="OneGame.TButton")
+		frame.clearExec = ttk.Button(frame.buttonframe, style="OneGame.TButton")
 
 		frame.downloadplay.downloaded = (game[1] in map(lambda x: x[1],self.downloadedGamesList))
 		if frame.downloadplay.downloaded == False:
@@ -293,6 +293,8 @@ class gui(tk.Frame):
 		else:
 			frame.downloadplay["text"] = "Play"
 			frame.downloadplay.bind("<Button-1>", self.playGame, add='')
+			frame.clearExec.bind("<Button-1>", self.clearExec, add='')
+			frame.clearExec["text"] = "Clear run executable"
 			
 		
 		
@@ -300,7 +302,7 @@ class gui(tk.Frame):
 		frame.imageLabel.pack(side="top")
 		frame.buttonframe.pack(side="bottom")
 		frame.downloadplay.pack(side="left")
-		frame.options.pack(side="right")
+		frame.clearExec.pack(side="right")
 		c = self.launcher.sqlconn.cursor()
 		c.execute("SELECT localimage from allgames where name=?;", (game[1],))
 		imagepath = c.fetchone()
@@ -311,6 +313,22 @@ class gui(tk.Frame):
 			except Exception as e:
 				pass
 		return frame
+
+	def clearExec(self, event):
+		buttonframe = event.widget.master
+		frame = buttonframe.master
+		c = self.launcher.sqlconn.cursor()
+		if self.platform == platforms.linux:			
+			installname = "linuxinstall"
+			execname = 'linuxexec'
+			executable, installdir = c.fetchone()
+		elif self.platform == platforms.windows:
+			installname = "windowsinstall"
+			execname = 'windowsexec'
+			
+		c.execute('UPDATE downloadedgames set %s="" where name=?;' % (execname), (frame.name,))
+		self.launcher.sqlconn.commit()
+		
 
 
 class ImageThread(threading.Thread):
