@@ -9,6 +9,7 @@ import enum
 import zipfile
 import threading
 import re
+import shutil
 
 class platforms(enum.Enum):
 	windows = 0
@@ -25,7 +26,7 @@ class ItchioLauncher:
 		self.session = requests.Session()
 		self.session.headers.update({'User-Agent':'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:79.0) Gecko/20100101 Firefox/79.0'})
 		self.homedir = os.getcwd()
-		self.sqlconn = sqlite3.connect(os.path.join(self.homedir,"cache/games.sql"), check_same_thread=False)
+		self.sqlconn = sqlite3.connect(os.path.join(self.homedir,"cache", "games.sql"), check_same_thread=False)
 		self.sqllock = threading.Lock()
 
 	def login(self,username,password,save=False):
@@ -130,7 +131,7 @@ class ItchioLauncher:
 				self.cache_game(gamename,imageurl=imageurl,downloadpage=gamepage,linux=linux,windows=windows,mac=mac, gameid=gameid)
 
 	def get_image(self, name, imageurl="",cookies=None):
-		with open(os.path.join(self.homedir,"cache/images/%s.png" % name),"wb") as f:
+		with open(os.path.join(self.homedir,"cache", "images", "%s.png" % name),"wb") as f:
 			for chunk in requests.get(imageurl,cookies=cookies):
 				f.write(chunk)
 		c = self.sqlconn.cursor()
@@ -150,7 +151,7 @@ class ItchioLauncher:
 	def nonsafe_download_game(self, name, platform=None, location='', overwrite=False,x64=True):
 		ItchioLauncher.thread_safe_download_game(name, platform=platform, location=location, overwrite=overwrite, cookies=self.session.cookies,x64=x64, sqlconn = self.sqlconn, homedir=self.homedir)
 
-	def thread_safe_download_game(name,platform=None,location='',overwrite=False, cookies=None,x64=True, sqlconn = None, homedir = None, progressor=None, lock=None):
+	def thread_safe_download_game(name,platform=None,location=None,overwrite=False, cookies=None,x64=True, sqlconn = None, homedir = None, progressor=None, lock=None):
 		#proxies = {"https":"127.0.0.1:8080"}
 		#verify=False
 		proxies = {}
@@ -158,7 +159,8 @@ class ItchioLauncher:
 		c = sqlconn.cursor()
 		c.execute('SELECT windowsinstall, linuxinstall, macinstall FROM downloadedgames where name=?;', (name,))
 		installs = c.fetchone()
-		if installs:
+		#if installs:
+		if False:
 			if installs[platform.value] != '':
 				if platform == platforms.windows:
 					c.execute('UPDATE downloadedgames set windowsinstall=? where name=?;', (location,name,))
@@ -194,32 +196,39 @@ class ItchioLauncher:
 		key = gamepageurl[gamepageurl.rfind('/')+1:]
 		data = {'csrf_token': urllib.parse.unquote(cookies['itchio_token'])}
 		gameresp = requests.post(basename + "/file/%s?key=%s" % (filenum,key), data=data, cookies=cookies, proxies=proxies, verify=verify)
-		thezip = requests.get(gameresp.json()['url'], cookies=cookies, stream=True, proxies=proxies, verify=verify)
-		total_length = int(thezip.headers['Content-length'])
-		ziploc = os.path.join(homedir, 'cache', 'zips', '%s.zip' % (name))
+		thegame = requests.get(gameresp.json()['url'], cookies=cookies, stream=True, proxies=proxies, verify=verify)
+		total_length = int(thegame.headers['Content-length'])
+		filename = re.findall('filename="(.+)"', thegame.headers['content-disposition'])[0]
+
+		fileloc = os.path.join(homedir, 'cache', 'zips', '%s' % (filename))
 		amount_gotten = 0
 		chunk_size = 500000
-		with open(ziploc,'wb') as f:
-			for chunk in thezip.iter_content(chunk_size=chunk_size):
+		with open(fileloc,'wb') as f:
+			for chunk in thegame.iter_content(chunk_size=chunk_size):
 				f.write(chunk)
 				if progressor:
 					amount_gotten += chunk_size
 					with progressor.lock:
 						progressor["value"] = int(100 * (amount_gotten / total_length))
-		## TODO it's not necessarily a zip. Could be a tar				
-		with zipfile.ZipFile(ziploc) as zip_ref:
-			zip_ref.extractall(os.path.join(location, platform.name))
-		os.remove(ziploc)
+
+		installdir = os.path.join(location, platform.name)
+		extension = filename[-3:]
+
+		if extension == "zip":
+			with zipfile.ZipFile(fileloc) as zip_ref:
+				zip_ref.extractall(installdir)
+			os.remove(fileloc)
+		elif extension == "exe":
+			os.makedirs(installdir, exist_ok=overwrite)
+			shutil.move(fileloc, os.path.join(installdir, filename))
 
 		## update stuff
-		c.execute('SELECT localimage from allgames where name=?;', (name,))
-		imagelocation = c.fetchone()[0]
 		downloadlocations = ['','','']
-		downloadlocations[platform.value] = os.path.join(location, platform.name)
+		downloadlocations[platform.value] = installdir
 		with lock:
 			c.execute('INSERT INTO downloadedgames VALUES (?, ?, ?, ?,"","","","",?);', (name, ) + tuple(downloadlocations) + (gameid,))
-			
-			os.makedirs(os.path.join(location,platform.name), exist_ok=overwrite)
+			if extension == "exe":
+				c.execute('UPDATE downloadedgames set windowsexec=? where name=?;', (os.path.join(installdir, filename), name,))
 
 			if platform == platforms.windows:
 				c.execute('UPDATE allgames set  windows_downloaded=True where name=?;', (name,))
