@@ -83,9 +83,18 @@ class gui(tk.Frame):
 		navFrame.unplayed = ttk.Button(navFrame, text="Unplayed Games")
 		navFrame.process_bundles = ttk.Button(navFrame, text="Process Bundles", command=self.processBundles)
 		maxwidth= navFrame.downloadedgames.winfo_width()
+
+		navFrame.clearImageCache = ttk.Button(navFrame, text="Clear image cache", command=self.clearImageCache)
+
 		for thisbutton in navFrame.winfo_children():
 			thisbutton.pack(side="top", fill="x")
 		return navFrame
+
+	def clearImageCache(self):
+		c = self.launcher.sqlconn.cursor()
+		c.execute('UPDATE allgames set cachedimage=False, localimage="";')
+		self.launcher.sqlconn.commit()
+		self.showGames()
 
 	def showAllGames(self):
 		self.gameFrame.page = 0
@@ -237,7 +246,7 @@ class gui(tk.Frame):
 		executable, installdir = c.fetchone()
 		if not executable:
 			executable = tk.filedialog.askopenfilename(initialdir = installdir, title="Choose which executable to run")
-			c.execute('UPDATE downloadedgames set %s=?' % (execname), (executable,))
+			c.execute('UPDATE downloadedgames set %s=? where name=?' % (execname), (executable,frame.name))
 			self.launcher.sqlconn.commit()
 			if not executable:
 				return
@@ -313,7 +322,7 @@ class ImageThread(threading.Thread):
 		while True:
 			print("checking for images")
 			self.check_for_images()
-			time.sleep(60)
+			time.sleep(5)
 	def check_for_images(self):
 		sqlconn = self.sqlconn
 		c = sqlconn.cursor()
@@ -327,7 +336,7 @@ class ImageThread(threading.Thread):
 				if game[0]:
 					resp = requests.get(game[0])
 					if game[1] != "":
-						filename = re.sub("^0-9a-zA-Z]+", "_", game[1])
+						filename = re.sub("[^0-9a-zA-Z]+", "_", game[1])
 						localpath = os.path.join(self.installdir,'cache', 'images', '%s.png' % filename)
 						with open(localpath,'wb') as f:
 							for chunk in resp:

@@ -140,8 +140,10 @@ class ItchioLauncher:
 		c = self.sqlconn.cursor()
 		c.execute('SELECT name FROM allgames where name=?', (name,))
 		if not c.fetchone():
+			self.sqlconn.isolation_level = sqlite3.EXCLUSIVE
 			c.execute('INSERT INTO allgames VALUES (?, ?, False, "", ?, ?, ?, ?, False, False, False, ?, ?);', (name, downloadpage, imageurl, windows, linux, mac,claimpage,gameid,))
 			self.sqlconn.commit()
+			self.sqlconn.isolation_level = sqlite3.DEFERRED
 
 	def nonsafe_download_game(self, name, platform=None, location='', overwrite=False,x64=True):
 		ItchioLauncher.thread_safe_download_game(name, platform=platform, location=location, overwrite=overwrite, cookies=self.session.cookies,x64=x64, sqlconn = self.sqlconn, homedir=self.homedir)
