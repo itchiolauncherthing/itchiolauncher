@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import shutil
 import sqlite3
 import tkinter as tk
 from tkinter import filedialog
@@ -8,8 +9,8 @@ import sys
 installdir = tk.filedialog.askdirectory(title="Where would you like to install?")
 os.makedirs(os.path.join(installdir, "cache", "images"), exist_ok=True)
 os.makedirs(os.path.join(installdir, "cache", "zips"), exist_ok=True)
-os.rename(os.path.join(os.getcwd(), "itchiolauncher.py"), os.path.join(installdir, "itchiolauncher.py"))
-os.rename(os.path.join(os.getcwd(), "gui.py"), os.path.join(installdir, "gui.py"))
+shutil.move(os.path.join(os.getcwd(), "itchiolauncher.py"), os.path.join(installdir, "itchiolauncher.py"))
+shutil.move(os.path.join(os.getcwd(), "gui.py"), os.path.join(installdir, "gui.py"))
 startconn = sqlite3.connect(os.path.join(installdir, "cache/games.sql"))
 settingsconn = sqlite3.connect(os.path.join(installdir, "settings.sql"))
 c = startconn.cursor()
