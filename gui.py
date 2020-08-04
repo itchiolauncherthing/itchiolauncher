@@ -237,7 +237,6 @@ class gui(tk.Frame):
 		if self.platform == platforms.linux:			
 			installname = "linuxinstall"
 			execname = 'linuxexec'
-			executable, installdir = c.fetchone()
 		elif self.platform == platforms.windows:
 			installname = "windowsinstall"
 			execname = 'windowsexec'
@@ -256,11 +255,19 @@ class gui(tk.Frame):
 		if self.platform == platforms.linux:
 			kwargs.update(start_new_session=True)
 			os.chmod(executable, 0o700)
+			oldwd = os.getcwd()
+			os.chdir(os.path.dirname(executable))
+			p = Popen([executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, **kwargs)
+			os.chdir(oldwd)
 		if self.platform == platforms.windows:
 			CREATE_NEW_PROCESS_GROUP = 0x00000200  # note: could get it from subprocess
 			DETACHED_PROCESS = 0x00000008          # 0x8 | 0x200 == 0x208
-			kwargs.update(creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)  
-		p = Popen([executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, **kwargs)
+			kwargs.update(creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP) 
+			oldwd = os.getcwd()
+			os.chdir(os.path.dirname(executable))
+			os.startfile(executable) 
+			os.chdir(oldwd)
+		
 			
 
 	def downloadGame(self, event):
