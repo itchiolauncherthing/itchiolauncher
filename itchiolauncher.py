@@ -221,6 +221,8 @@ class ItchioLauncher:
 		elif extension == "exe":
 			os.makedirs(installdir, exist_ok=overwrite)
 			shutil.move(fileloc, os.path.join(installdir, filename))
+		else:
+			print("Don't know how to handle the extension: %s. Leaving it for now." % extension)
 
 		## update stuff
 		downloadlocations = ['','','']
