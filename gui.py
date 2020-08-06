@@ -164,6 +164,8 @@ class gui(tk.Frame):
 		nextButton = ttk.Button(pagerFrame,text = "Next", command=self.pageNext, width=12)
 		scrollable_frame.pageLabel = ttk.Label(pagerFrame,text="page 1 of 1", width=12 )
 
+		searchField = ttk.Entry(pagerFrame, width=15)
+
 
 		pagerFrame.pack(side="top", fill="x")
 		canvas.pack(side="left", fill="both", expand=True)
@@ -172,6 +174,7 @@ class gui(tk.Frame):
 		backButton.pack(side="left")
 		scrollable_frame.pageLabel.pack(side="left")
 		nextButton.pack(side="left")
+		searchField.pack(side="right")
 		#backButton.grid(row=0,column=0)
 		#container.gameFrame.pageLabel.gric(row=0,column=1,
 		#nextButton.grid(row=0,column=2)
@@ -188,8 +191,24 @@ class gui(tk.Frame):
 		elif self.platform == platforms.windows:
 			self.master.bind_all("<MouseWheel>", self.__on_mousewheel)
 
+		searchField.bind("<Return>", self.searchGames)
+
 		return container
 
+
+	def searchGames(self, event):
+		buttonframe = event.widget.master
+		frame = buttonframe.master
+		print(event.widget.get())
+		self.gamelist = []
+		for  game in self.allgameslist:
+			if event.widget.get().upper() in game[1].upper():
+				self.gamelist.append(game)
+		self.showGames()
+
+	def getMatches(self, game):
+		if self.r.match(game[1]):
+			return game
 
 	def pageNext(self):
 		if self.gameFrame.page < self.gameFrame.maxpages:
