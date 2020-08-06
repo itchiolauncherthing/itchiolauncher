@@ -41,8 +41,10 @@ class gui(tk.Frame):
 		if platform.system() == "Windows":
 			self.platform = platforms.windows
 		elif platform.system() == "Linux":
-			self.platform = platforms.windows
+			self.platform = platforms.linux
 		## TODO: figure out how macs report
+		self.filterOS = tk.BooleanVar()
+		self.filterOS.set(True)
 		self.launcher.process_library()
 		self.widgetSize = 0
 		self.makeGameList()
@@ -65,7 +67,7 @@ class gui(tk.Frame):
 		self.libCanvas = self.makelib()
 		self.gameFrame = self.libCanvas.gameFrame
 		self.libCanvas.pack(side="right",fill="both",expand=True)
-		self.showAllGames()
+		self.refreshAllGamesList()
 	def populateStyle(self):
 		self.style = ttk.Style()
 		self.style.configure("OneGame.TButton", foreground="#B0B0B0", background="#202020")
@@ -98,7 +100,7 @@ class gui(tk.Frame):
 
 	def showAllGames(self):
 		self.gameFrame.page = 0
-		self.gamelist = self.allgameslist.copy()
+		self.gamelist = self.allgameslist
 		self.showGames()
 
 	def showDownloadedGames(self):
@@ -117,12 +119,19 @@ class gui(tk.Frame):
 		self.gameFrame.pageLabel.configure(text = "page %d of %d" % (self.gameFrame.page + 1, self.gameFrame.maxpages + 1))
 		self.drawWidgets(gameWidgets=self.gameWidgets,container=self.gameFrame)
 		
+	def refreshAllGamesList(self):
+		self.makeGameList()
+		self.showAllGames()
+
 
 	def makeGameList(self):
 		c = self.launcher.sqlconn.cursor()
 		#c.execute("SELECT name from allgames;")
 		#self.allgameslist = [*map(lambda x: x[0], c.fetchall())]
-		c.execute("SELECT gameid,name from allgames;")
+		if self.filterOS.get():
+			c.execute("SELECT gameid,name from allgames where %s=True;" % (self.platform.name))
+		else:
+			c.execute("SELECT gameid,name from allgames;")
 		self.allgameslist = c.fetchall()
 
 	def makeWidgets(self,games=None,container=None):
@@ -165,6 +174,7 @@ class gui(tk.Frame):
 		scrollable_frame.pageLabel = ttk.Label(pagerFrame,text="page 1 of 1", width=12 )
 
 		searchField = ttk.Entry(pagerFrame, width=15)
+		filterOSCheckbox = tk.Checkbutton(pagerFrame, text="Filter to current OS", onvalue = True, offvalue = False, var = self.filterOS, command=self.refreshAllGamesList)
 
 
 		pagerFrame.pack(side="top", fill="x")
@@ -175,6 +185,7 @@ class gui(tk.Frame):
 		scrollable_frame.pageLabel.pack(side="left")
 		nextButton.pack(side="left")
 		searchField.pack(side="right")
+		filterOSCheckbox.pack(side="right")
 		#backButton.grid(row=0,column=0)
 		#container.gameFrame.pageLabel.gric(row=0,column=1,
 		#nextButton.grid(row=0,column=2)
@@ -192,6 +203,7 @@ class gui(tk.Frame):
 			self.master.bind_all("<MouseWheel>", self.__on_mousewheel)
 
 		searchField.bind("<Return>", self.searchGames)
+		#filterOSCheckbox.bind("<Button-1>", self.refreshAllGamesList)
 
 		return container
 
@@ -199,7 +211,6 @@ class gui(tk.Frame):
 	def searchGames(self, event):
 		buttonframe = event.widget.master
 		frame = buttonframe.master
-		print(event.widget.get())
 		self.gamelist = []
 		for  game in self.allgameslist:
 			if event.widget.get().upper() in game[1].upper():
@@ -364,7 +375,6 @@ class ImageThread(threading.Thread):
 	def run(self):
 		self.installdir = os.getcwd()
 		while True:
-			print("checking for images")
 			self.check_for_images()
 			time.sleep(30)
 	def check_for_images(self):
@@ -373,7 +383,6 @@ class ImageThread(threading.Thread):
 		c.execute('SELECT imageurl,name from allgames where cachedimage=False;')
 		hits = c.fetchall()
 		if hits:
-			print("got some uncached images")
 			throttle = 1000
 			count=0
 			for game in hits:
@@ -415,7 +424,7 @@ class LoginFrame(tk.Frame):
 		self.entry_password.grid(row=1, column=1)
 
 		self.savesession = tk.BooleanVar()
-		self.checkbox = tk.Checkbutton(self, text="Keep me logged in. Your password is not saved", onvalue = True, offvalue = False, var = self.savesession)
+		self.checkbox = tk.Checkbutton(self, text="Keep me logged in. Your password is not saved", onvalue = True, offvalue = False, var = self.savesession, command=self.refreshAllGamesList)
 		self.checkbox.grid(columnspan=2)
 
 		self.logbtn = ttk.Button(self, text="Login", command=self._login_btn_clicked)
