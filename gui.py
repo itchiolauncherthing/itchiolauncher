@@ -137,7 +137,8 @@ class gui(tk.Frame):
 	def makeWidgets(self,games=None,container=None):
 		gamewidgets = []
 		for thisgame in games:
-			gamewidgets.append(self.makeGameWidget(game=thisgame, parentframe=container))
+#			gamewidgets.append(self.makeGameWidget(game=thisgame, parentframe=container))
+			gamewidgets.append(GameWidget(parentframe=container, game=thisgame, fullGui=self))
 		return gamewidgets
 
 	def drawWidgets(self,gameWidgets=None,container=None):
@@ -311,46 +312,9 @@ class gui(tk.Frame):
 		self.downloadQueue.put((frame.name, self.platform, downloadLocation, True, self.launcher.session.cookies, True, self.installpath, frame.progress, self.launcher.sqllock))
 
 		
-	def makeGameWidget(self, game=None, parentframe=None):
-		frame = tk.Frame(parentframe)
-		frame.name = game[1]
-		frame.title = ttk.Label(frame, text=frame.name,wraplength=315)
-		frame.imageLabel = ttk.Label(frame)
-		frame.imageLabel.image = tk.PhotoImage(width=315, height=250)
-		frame.imageLabel.configure(image=frame.imageLabel.image)
-		frame.buttonframe = tk.Frame(frame)
-		frame.downloadplay = ttk.Button(frame.buttonframe, style="OneGame.TButton")
-		frame.clearExec = ttk.Button(frame.buttonframe, style="OneGame.TButton")
-
-		frame.downloadplay.downloaded = (game[1] in map(lambda x: x[1],self.downloadedGamesList))
-		if frame.downloadplay.downloaded == False:
-			frame.downloadplay["text"] = "Download"
-			frame.downloadplay.bind("<Button-1>", self.downloadGame, add='')
-		else:
-			frame.downloadplay["text"] = "Play"
-			frame.downloadplay.bind("<Button-1>", self.playGame, add='')
-			frame.clearExec.bind("<Button-1>", self.clearExec, add='')
-			frame.clearExec["text"] = "Clear run executable"
-			
-		
-		
-		frame.title.pack(side="top")
-		frame.imageLabel.pack(side="top")
-		frame.buttonframe.pack(side="bottom")
-		frame.downloadplay.pack(side="left")
-		frame.clearExec.pack(side="right")
-		c = self.launcher.sqlconn.cursor()
-		c.execute("SELECT localimage from allgames where name=?;", (game[1],))
-		imagepath = c.fetchone()
-		if imagepath:
-			try:
-				frame.imageLabel.image.configure(file=imagepath[0])
-				pass
-			except Exception as e:
-				pass
-		return frame
 
 	def clearExec(self, event):
+		print("wrong one")
 		buttonframe = event.widget.master
 		frame = buttonframe.master
 		c = self.launcher.sqlconn.cursor()
@@ -364,7 +328,146 @@ class gui(tk.Frame):
 		with self.launcher.sqllock:
 			c.execute('UPDATE downloadedgames set %s="" where name=?;' % (execname), (frame.name,))
 			self.launcher.sqlconn.commit()
+
+
+#	def makeGameWidget(self, game=None, parentframe=None):
+#		frame = tk.Frame(parentframe)
+#		frame.name = game[1]
+#		frame.title = ttk.Label(frame, text=frame.name,wraplength=315)
+#		frame.imageLabel = ttk.Label(frame)
+#		frame.imageLabel.image = tk.PhotoImage(width=315, height=250)
+#		frame.imageLabel.configure(image=frame.imageLabel.image)
+#		frame.buttonframe = tk.Frame(frame)
+#		frame.downloadplay = ttk.Button(frame.buttonframe, style="OneGame.TButton")
+#		frame.clearExec = ttk.Button(frame.buttonframe, style="OneGame.TButton")
+#
+#		frame.downloadplay.downloaded = (game[1] in map(lambda x: x[1],self.downloadedGamesList))
+#		if frame.downloadplay.downloaded == False:
+#			frame.downloadplay["text"] = "Download"
+#			frame.downloadplay.bind("<Button-1>", self.downloadGame, add='')
+#		else:
+#			frame.downloadplay["text"] = "Play"
+#			frame.downloadplay.bind("<Button-1>", self.playGame, add='')
+#			frame.clearExec.bind("<Button-1>", self.clearExec, add='')
+#			frame.clearExec["text"] = "Clear run executable"
+#			
+#	#	frame.popup_menu = tk.Menu(frame, tearoff=0)
+#		
+#		
+#		frame.title.pack(side="top")
+#		frame.imageLabel.pack(side="top")
+#		frame.buttonframe.pack(side="bottom")
+#		frame.downloadplay.pack(side="left")
+#		frame.clearExec.pack(side="right")
+#		c = self.launcher.sqlconn.cursor()
+#		c.execute("SELECT localimage from allgames where name=?;", (game[1],))
+#		imagepath = c.fetchone()
+#		if imagepath:
+#			try:
+#				frame.imageLabel.image.configure(file=imagepath[0])
+#				pass
+#			except Exception as e:
+#				pass
+#		return frame
 		
+
+class GameWidget(tk.Frame):
+	def __init__(self, parentframe=None, game=None, sqlconn=None, downloadedGamesList=None, sqllock=None, fullGui=None):
+		super().__init__(parentframe)
+		self.fullGui = fullGui
+		self.name = game[1]
+		self.title = ttk.Label(self, text=self.name,wraplength=315)
+		self.imageLabel = ttk.Label(self)
+		self.imageLabel.image = tk.PhotoImage(width=315, height=250)
+		self.imageLabel.configure(image=self.imageLabel.image)
+		self.buttonframe = tk.Frame(self)
+		self.downloadplay = ttk.Button(self.buttonframe, style="OneGame.TButton")
+		self.clearExec = ttk.Button(self.buttonframe, style="OneGame.TButton")
+
+		self.downloaded = (game[1] in map(lambda x: x[1],self.fullGui.downloadedGamesList))
+		if self.downloaded == False:
+			self.downloadplay["text"] = "Download"
+			self.downloadplay["command"] = self.downloadGame
+		else:
+			self.downloadplay["text"] = "Play"
+			self.downloadplay["command"] = self.playGame
+			self.clearExec["command"] = self.clearExecs
+			self.clearExec["text"] = "Clear run executable"
+			
+	#	self.popup_menu = tk.Menu(self, tearoff=0)
+		
+		
+		self.title.pack(side="top")
+		self.imageLabel.pack(side="top")
+		self.buttonframe.pack(side="bottom")
+		self.downloadplay.pack(side="left")
+		self.clearExec.pack(side="right")
+		c = self.fullGui.launcher.sqlconn.cursor()
+		c.execute("SELECT localimage from allgames where name=?;", (game[1],))
+		imagepath = c.fetchone()
+		if imagepath:
+			try:
+				self.imageLabel.image.configure(file=imagepath[0])
+				pass
+			except Exception as e:
+				pass
+
+	def playGame(self):
+		c = self.fullGui.launcher.sqlconn.cursor()
+		if self.fullGui.platform == platforms.linux:			
+			installname = "linuxinstall"
+			execname = 'linuxexec'
+		elif self.fullGui.platform == platforms.windows:
+			installname = "windowsinstall"
+			execname = 'windowsexec'
+			
+		c.execute("SELECT %s,%s from downloadedgames where name=?;" % (execname,installname), (self.name,))
+		executable, installdir = c.fetchone()
+		if not executable:
+			executable = tk.filedialog.askopenfilename(initialdir = installdir, title="Choose which executable to run")
+			with self.fullGui.launcher.sqllock:
+				c.execute('UPDATE downloadedgames set %s=? where name=?' % (execname), (executable,self.name))
+				self.fullGui.launcher.sqlconn.commit()
+			if not executable:
+				return
+
+		kwargs = {}
+		if self.fullGui.platform == platforms.linux:
+			kwargs.update(start_new_session=True)
+			os.chmod(executable, 0o700)
+			oldwd = os.getcwd()
+			os.chdir(os.path.dirname(executable))
+			p = Popen([executable], stdin=PIPE, stdout=PIPE, stderr=PIPE, **kwargs)
+			os.chdir(oldwd)
+		if self.fullGui.platform == platforms.windows:
+			CREATE_NEW_PROCESS_GROUP = 0x00000200  # note: could get it from subprocess
+			DETACHED_PROCESS = 0x00000008          # 0x8 | 0x200 == 0x208
+			kwargs.update(creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP) 
+			oldwd = os.getcwd()
+			os.chdir(os.path.dirname(executable))
+			os.startfile(executable) 
+			os.chdir(oldwd)
+
+
+	def downloadGame(self):
+		self.progress = ttk.Progressbar(self.imageLabel, orient="horizontal",length=self.fullGui.widgetSize, mode="determinate", maximum=100,value=0)
+		self.progress.lock = threading.RLock()
+		self.progress.place(relx=0, rely=1, anchor="sw")
+		downloadLocation = os.path.join(self.fullGui.defaultGameLocation, re.sub("[^0-9a-zA-Z]+","_",self.name))
+		#name, platform, location, overwrite, cookies, x64, homedir, progressor
+		self.fullGui.downloadQueue.put((self.name, self.fullGui.platform, downloadLocation, True, self.fullGui.launcher.session.cookies, True, self.fullGui.installpath, self.progress, self.fullGui.launcher.sqllock))
+
+
+
+	def clearExecs(self):
+		c = self.fullGui.launcher.sqlconn.cursor()
+		if self.fullGui.platform == platforms.linux:			
+			execname = 'linuxexec'
+		elif self.fullGui.platform == platforms.windows:
+			execname = 'windowsexec'
+		with self.fullGui.launcher.sqllock:
+			c.execute('UPDATE downloadedgames set %s="" where name=?;' % (execname), (self.name,))
+			self.fullGui.launcher.sqlconn.commit()
 
 
 class ImageThread(threading.Thread):
