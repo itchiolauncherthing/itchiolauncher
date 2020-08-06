@@ -382,7 +382,6 @@ class GameWidget(tk.Frame):
 		self.imageLabel.configure(image=self.imageLabel.image)
 		self.buttonframe = tk.Frame(self)
 		self.downloadplay = ttk.Button(self.buttonframe, style="OneGame.TButton")
-		self.clearExec = ttk.Button(self.buttonframe, style="OneGame.TButton")
 
 		self.downloaded = (game[1] in map(lambda x: x[1],self.fullGui.downloadedGamesList))
 		if self.downloaded == False:
@@ -391,17 +390,17 @@ class GameWidget(tk.Frame):
 		else:
 			self.downloadplay["text"] = "Play"
 			self.downloadplay["command"] = self.playGame
-			self.clearExec["command"] = self.clearExecs
-			self.clearExec["text"] = "Clear run executable"
 			
-	#	self.popup_menu = tk.Menu(self, tearoff=0)
+		self.popup_menu = tk.Menu(self, tearoff=0)
+		self.popup_menu.add_command(label="Clear Exec", command=self.clearExecs)
+		self.imageLabel.bind("<Button-3>", self.popup)
+		#self.bind("<Button-2>", self.popup)
 		
 		
 		self.title.pack(side="top")
 		self.imageLabel.pack(side="top")
 		self.buttonframe.pack(side="bottom")
 		self.downloadplay.pack(side="left")
-		self.clearExec.pack(side="right")
 		c = self.fullGui.launcher.sqlconn.cursor()
 		c.execute("SELECT localimage from allgames where name=?;", (game[1],))
 		imagepath = c.fetchone()
@@ -411,6 +410,12 @@ class GameWidget(tk.Frame):
 				pass
 			except Exception as e:
 				pass
+
+	def popup(self, event):
+		try:
+			self.popup_menu.tk_popup(event.x_root, event.y_root, 0)
+		finally:
+			self.popup_menu.grab_release()
 
 	def playGame(self):
 		c = self.fullGui.launcher.sqlconn.cursor()
